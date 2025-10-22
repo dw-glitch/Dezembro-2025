@@ -694,14 +694,14 @@
         // Função para alternar o status de um dia
         function toggleDay(dayElement) {
             const dayNumber = parseInt(dayElement.textContent);
-            
-            // Verifica se é um dia válido (não vazio e não é pausa)
-            if (!dayNumber || dayElement.classList.contains('empty') || dayElement.classList.contains('yellow-period')) {
+
+            // Verifica se é um dia válido (não vazio)
+            if (!dayNumber || dayElement.classList.contains('empty')) {
                 return;
             }
 
             let takenDays = loadTakenDays();
-            
+
             if (dayElement.classList.contains('taken')) {
                 // Remove da lista
                 takenDays = takenDays.filter(day => day !== dayNumber);
@@ -713,7 +713,7 @@
                 }
                 dayElement.classList.add('taken');
             }
-            
+
             // Tenta salvar e mostra feedback visual
             const saved = saveTakenDays(takenDays);
             if (!saved) {
@@ -761,8 +761,8 @@
                     dayElement.classList.add('taken');
                 }
                 
-                // Adiciona evento de clique apenas para dias válidos (não pausa)
-                if (dayNumber && !dayElement.classList.contains('yellow-period')) {
+                // Adiciona evento de clique para todos os dias válidos (inclusive yellow-period)
+                if (dayNumber) {
                     dayElement.addEventListener('click', () => toggleDay(dayElement));
                 }
             });
@@ -793,9 +793,8 @@
         // Salva periodicamente para garantir persistência
         setInterval(() => {
             const currentData = loadTakenDays();
-            if (currentData.length > 0) {
-                saveTakenDays(currentData);
-            }
+            // Sempre tenta salvar o estado atual (mesmo quando vazio)
+            saveTakenDays(currentData);
         }, 30000); // A cada 30 segundos
 
         // Inicializa quando a página carrega
