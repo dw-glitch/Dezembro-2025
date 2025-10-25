@@ -582,12 +582,127 @@
                 font-size: 7px;
             }
         }
+
+        /* Added: Edit mode toggle button, label, color popover and responsive tweaks */
+        .edit-toggle {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 40px;
+            height: 36px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 220ms ease;
+            z-index: 50;
+            font-size: 20px;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+
+        .edit-toggle:hover { transform: translateY(-2px); }
+        .edit-toggle.active { 
+            background: #ffefc2; 
+            color: #6b4a00; 
+            box-shadow: 0 6px 18px rgba(107,74,0,0.12); 
+            border-color: rgba(0,0,0,0.06); 
+        }
+
+        .edit-label {
+            position: absolute;
+            top: 12px;
+            right: 60px;
+            z-index: 60;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        body.editing .edit-label { display: flex; }
+
+        .color-popover {
+            position: fixed;
+            min-width: 150px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.14);
+            padding: 8px;
+            display: none;
+            gap: 8px;
+            align-items: center;
+            z-index: 120;
+            transform-origin: top left;
+            transition: transform 160ms cubic-bezier(.2,.9,.3,1), opacity 160ms ease;
+            opacity: 0;
+            border: 1px solid #e9ecef;
+        }
+
+        .color-popover.show {
+            display: flex;
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .color-option {
+            flex: 1;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 140ms ease;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .color-option.red { background: #ffeaea; color: #721c24; border: 1px solid #f8d7da; }
+        .color-option.green { background: #e8f5e8; color: #155724; border: 1px solid #c3e6cb; }
+        .color-option.yellow { background: #fff8e1; color: #856404; border: 1px solid #ffeaa7; }
+
+        @media (max-width: 768px) {
+            .edit-toggle { 
+                top: 8px; 
+                right: 8px; 
+                width: 36px; 
+                height: 34px; 
+            }
+            .edit-label { 
+                top: 8px; 
+                right: 52px; 
+                font-size: 11px; 
+                padding: 5px 8px; 
+            }
+            .color-popover { 
+                min-width: 140px; 
+                padding: 6px; 
+                gap: 6px; 
+            }
+        }
     </style>
     <script>
         // Configurações para persistência de dados
         const STORAGE_KEY = 'calendario_pilula_dezembro_2025';
         const BACKUP_KEY = 'calendario_pilula_backup_dezembro';
-        
+
+        // Added constants for colors editor
+        // COLORS_KEY will be set dynamically based on month/year shown in header
+        let isEditing = false;
+        let COLORS_KEY = 'calendario_colors_dezembro_2025';
+        let currentColorTarget = null; // DOM element for currently edited day
+
         // Função para carregar dados salvos com múltiplas fontes
         function loadTakenDays() {
             try {
@@ -723,6 +838,156 @@
             }
         }
 
+        // Função para carregar dados de cores salvas
+        function loadColors() {
+            try {
+                // tenta inicializar a chave dinamicamente a partir do cabeçalho, se possível
+                const headerText = document.querySelector('.header p')?.textContent?.trim();
+                if (headerText) {
+                    // cabeçalho no formato "Dezembro 2025"
+                    const parts = headerText.split(' ');
+                    if (parts.length >= 2) {
+                        const month = parts[0].toLowerCase();
+                        const year = parts[1];
+                        COLORS_KEY = `calendario_colors_${month}_${year}`;
+                    }
+                }
+                const raw = localStorage.getItem(COLORS_KEY);
+                return raw ? JSON.parse(raw) : {};
+            } catch (e) {
+                console.warn('Error loading colors:', e);
+                return {};
+            }
+        }
+
+        // Função para salvar mapeamentos de cores
+        function saveColors(colors) {
+            try {
+                localStorage.setItem(COLORS_KEY, JSON.stringify(colors));
+                localStorage.setItem(COLORS_KEY + '_backup', JSON.stringify(colors));
+                return true;
+            } catch (e) {
+                console.error('Error saving colors:', e);
+                return false;
+            }
+        }
+
+        // Aplicar cores salvas no DOM (mantém classes padrão se nenhuma cor salva para um dia)
+        function applySavedColors() {
+            const colors = loadColors();
+            if (!colors || Object.keys(colors).length === 0) return;
+            Object.entries(colors).forEach(([dayStr, cls]) => {
+                const dayNum = parseInt(dayStr, 10);
+                if (!dayNum) return;
+                const el = Array.from(document.querySelectorAll('.day')).find(d => parseInt(d.textContent) === dayNum);
+                if (el) {
+                    // remove quaisquer classes de período e adiciona a classe salva
+                    el.classList.remove('red-period','green-period','yellow-period','pink-period');
+                    el.classList.add(cls);
+                }
+            });
+        }
+
+        // Funções do modo de edição
+        function toggleEditMode() {
+            isEditing = !isEditing;
+            document.body.classList.toggle('editing', isEditing);
+            const btn = document.querySelector('.edit-toggle');
+            if (btn) btn.classList.toggle('active', isEditing);
+            if (!isEditing) closeColorPicker();
+        }
+
+        function initializeEditMode() {
+            const header = document.querySelector('.header');
+            if (header) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'edit-toggle';
+                btn.title = 'Toggle edit mode';
+                btn.innerHTML = '⋮';
+                btn.addEventListener('click', toggleEditMode);
+                header.appendChild(btn);
+
+                const lbl = document.createElement('div');
+                lbl.className = 'edit-label';
+                lbl.textContent = 'Editing';
+                header.appendChild(lbl);
+            }
+
+            // Create color popover (hidden by default)
+            const pop = document.createElement('div');
+            pop.className = 'color-popover';
+            pop.innerHTML = `
+                <div class="color-option red" data-cls="red-period">🔴</div>
+                <div class="color-option green" data-cls="green-period">🟢</div>
+                <div class="color-option yellow" data-cls="yellow-period">🟡</div>
+            `;
+            document.body.appendChild(pop);
+
+            // click handlers for color options
+            pop.querySelectorAll('.color-option').forEach(opt => {
+                opt.addEventListener('click', () => {
+                    if (!currentColorTarget) return;
+                    const cls = opt.getAttribute('data-cls');
+                    // update DOM classes
+                    currentColorTarget.classList.remove('red-period','green-period','yellow-period','pink-period');
+                    currentColorTarget.classList.add(cls);
+
+                    // update saved mapping
+                    const colors = loadColors();
+                    const dayNum = parseInt(currentColorTarget.textContent, 10);
+                    if (dayNum) {
+                        colors[dayNum] = cls;
+                        saveColors(colors);
+                    }
+
+                    closeColorPicker();
+                });
+            });
+
+            // close popover when clicking outside (but allow opening on other days)
+            document.addEventListener('click', (e) => {
+                const popover = document.querySelector('.color-popover');
+                if (!popover || !popover.classList.contains('show')) return;
+                if (popover.contains(e.target)) return;
+                if (e.target.closest('.day')) return; // clicking another day will open a new popover instead
+                closeColorPicker();
+            }, true);
+        }
+
+        function openColorPicker(targetEl, event) {
+            const pop = document.querySelector('.color-popover');
+            if (!pop) return;
+
+            currentColorTarget = targetEl;
+
+            // position near target (try below-right, adjust if outside viewport)
+            const rect = targetEl.getBoundingClientRect();
+            const offset = 8;
+            let left = rect.right + offset;
+            let top = rect.top;
+
+            // prefer placing to the right, but flip if not enough space
+            if (left + pop.offsetWidth > window.innerWidth - 8) {
+                left = rect.left - pop.offsetWidth - offset;
+            }
+            if (left < 8) left = 8;
+            if (top + pop.offsetHeight > window.innerHeight - 8) {
+                top = window.innerHeight - pop.offsetHeight - 8;
+            }
+            if (top < 8) top = 8;
+
+            pop.style.left = `${Math.round(left)}px`;
+            pop.style.top = `${Math.round(top)}px`;
+            pop.classList.add('show');
+        }
+
+        function closeColorPicker() {
+            const pop = document.querySelector('.color-popover');
+            if (pop) pop.classList.remove('show');
+            currentColorTarget = null;
+        }
+
         // Função para verificar compatibilidade do localStorage
         function checkStorageCompatibility() {
             try {
@@ -750,6 +1015,9 @@
             if (!takenDays || takenDays.length === 0) {
                 takenDays = recoverData();
             }
+
+            // Apply saved colors if present
+            applySavedColors();
             
             const dayElements = document.querySelectorAll('.day:not(.empty)');
             
@@ -761,9 +1029,17 @@
                     dayElement.classList.add('taken');
                 }
                 
-                // Adiciona evento de clique para todos os dias válidos (inclusive yellow-period)
+                // Add handler that respects edit mode
                 if (dayNumber) {
-                    dayElement.addEventListener('click', () => toggleDay(dayElement));
+                    dayElement.addEventListener('click', (e) => {
+                        if (isEditing) {
+                            // prevent triggering taken toggle while editing
+                            e.stopPropagation();
+                            openColorPicker(dayElement, e);
+                            return;
+                        }
+                        toggleDay(dayElement);
+                    });
                 }
             });
             
@@ -798,7 +1074,10 @@
         }, 30000); // A cada 30 segundos
 
         // Inicializa quando a página carrega
-        document.addEventListener('DOMContentLoaded', initializeCalendar);
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeEditMode();
+            initializeCalendar();
+        });
         
         // Salva antes de sair da página
         window.addEventListener('beforeunload', () => {
@@ -812,7 +1091,10 @@
             saveData: saveTakenDays,
             clearData: clearAllData,
             exportData: exportData,
-            recoverData: recoverData
+            recoverData: recoverData,
+            loadColors: loadColors,
+            saveColors: saveColors,
+            toggleEditMode: toggleEditMode
         };
     </script>
 </head>
@@ -874,9 +1156,10 @@
                     <div class="day yellow-period">26</div>
                     <div class="day yellow-period">27</div>
                     <div class="day yellow-period">28</div>
-                    <div class="day pink-period">29</div>
-                    <div class="day pink-period">30</div>
-                    <div class="day pink-period">31</div>
+                    <!-- Changed 29-31 to red-period to match default scheme -->
+                    <div class="day red-period">29</div>
+                    <div class="day red-period">30</div>
+                    <div class="day red-period">31</div>
                     <div class="day empty"></div>
                 </div>
             </div>
@@ -910,10 +1193,11 @@
                     </div>
                     
                     <div class="legend-item">
-                        <div class="legend-color pink-period"></div>
+                        <!-- Updated legend to reflect days 29-31 as red (needs protection) -->
+                        <div class="legend-color red-period"></div>
                         <div class="legend-text">
-                            <div class="legend-title">🌸 Dias 29 a 31</div>
-                            <div class="legend-desc">Nova cartela (totalmente protegida)</div>
+                            <div class="legend-title">🔴 Dias 29 a 31</div>
+                            <div class="legend-desc">Nova cartela (precisa usar camisinha)</div>
                         </div>
                     </div>
                 </div>
